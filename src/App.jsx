@@ -1,471 +1,513 @@
-import React, { useState } from 'react';
-import { DollarSign, Server, Database, Users, Mail, Bell, Package } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Users, Code, Brain, Server, Clock, DollarSign, Cloud, CheckCircle2, AlertCircle } from 'lucide-react';
 
-const AWSCostCalculator = () => {
-  const [userCount, setUserCount] = useState(10);
-  const [currency, setCurrency] = useState('INR'); // USD or INR
-  const [deploymentType, setDeploymentType] = useState('monorepo'); // monorepo or microservices
-  const USD_TO_INR = 83.5; // Current exchange rate
+const App = () => {
+  const [timeline, setTimeline] = useState(6);
+  const [teamQuality, setTeamQuality] = useState('mid');
+  const [userBase, setUserBase] = useState(200);
+  
+  const [scope, setScope] = useState({
+    backendServices: 60,
+    frontendServices: 10,
+    aiAgents: 20,
+    generativeAI: 5,
+    separateServices: 10
+  });
 
-  const formatCurrency = (amount) => {
-    if (currency === 'INR') {
-      return `₹${(amount * USD_TO_INR).toFixed(2)}`;
-    }
-    return `$${amount.toFixed(2)}`;
+  const [awsServices, setAwsServices] = useState({
+    ec2: true,
+    rds: true,
+    redis: true,
+    s3: true,
+    apiGateway: true,
+    vpc: true,
+    cognito: true,
+    sns: true,
+    sqs: true,
+    elb: true,
+    cloudwatch: true
+  });
+
+  const toggleAwsService = (service) => {
+    setAwsServices({ ...awsServices, [service]: !awsServices[service] });
   };
 
-  // Cost calculations based on user count and deployment type
-  const calculateCosts = (users) => {
-    let ec2InstancesNeeded, ec2InstanceType, ec2HourlyCost;
+  const updateScope = (field, value) => {
+    setScope({ ...scope, [field]: parseInt(value) || 0 });
+  };
 
-    if (deploymentType === 'monorepo') {
-      // Monorepo: All services run together, fewer instances needed
-      // 1-2 larger instances can handle all 20 services bundled together
-      if (users <= 50) {
-        ec2InstancesNeeded = 1;
-        ec2InstanceType = 't3.large';
-        ec2HourlyCost = 0.0832; // t3.large
-      } else if (users <= 100) {
-        ec2InstancesNeeded = 2;
-        ec2InstanceType = 't3.large';
-        ec2HourlyCost = 0.0832;
-      } else if (users <= 200) {
-        ec2InstancesNeeded = 2;
-        ec2InstanceType = 't3.xlarge';
-        ec2HourlyCost = 0.1664;
-      } else {
-        ec2InstancesNeeded = 3;
-        ec2InstanceType = 't3.xlarge';
-        ec2HourlyCost = 0.1664;
-      }
-    } else {
-      // Microservices: Each service runs separately, more instances needed
-      if (users <= 40) {
-        ec2InstancesNeeded = 6;
-        ec2InstanceType = 't3.medium';
-        ec2HourlyCost = 0.0416;
-      } else if (users <= 100) {
-        ec2InstancesNeeded = 8;
-        ec2InstanceType = 't3.medium';
-        ec2HourlyCost = 0.0416;
-      } else if (users <= 200) {
-        ec2InstancesNeeded = 12;
-        ec2InstanceType = 't3.medium';
-        ec2HourlyCost = 0.0416;
-      } else {
-        ec2InstancesNeeded = 16;
-        ec2InstanceType = 't3.medium';
-        ec2HourlyCost = 0.0416;
-      }
-    }
-
-    const ec2MonthlyCost = ec2InstancesNeeded * ec2HourlyCost * 730;
-
-    // S3 Costs
-    const s3Storage = users <= 40 ? 20 : users <= 100 ? 50 : users <= 200 ? 100 : users <= 300 ? 200 : 300;
-    const s3StorageCost = s3Storage * 0.023;
-    const s3RequestsCost = (users * 1000 * 0.0004) / 1000;
-    const s3TotalCost = s3StorageCost + s3RequestsCost;
-
-    // Cognito Costs (Lite tier - first 50k MAU free)
-    let cognitoCost = 0;
-    if (users > 50000) {
-      const billableUsers = users - 50000;
-      if (billableUsers <= 50000) {
-        cognitoCost = billableUsers * 0.0055;
-      } else {
-        cognitoCost = 50000 * 0.0055 + (billableUsers - 50000) * 0.0046;
-      }
-    }
-
-    // SNS Costs (first 1M requests free)
-    const snsNotifications = users * 100;
-    const snsCost = snsNotifications > 1000000 ? ((snsNotifications - 1000000) / 1000000) * 0.50 : 0;
-
-    // SQS Costs (first 1M requests free)
-    const sqsRequests = users * 500;
-    const sqsCost = sqsRequests > 1000000 ? ((sqsRequests - 1000000) / 1000000) * 0.40 : 0;
-
-    // Redis/ElastiCache
-    const redisInstanceType = users <= 100 ? 'cache.t3.micro' : 'cache.t3.small';
-    const redisHourlyCost = users <= 100 ? 0.017 : 0.034;
-    const redisInstances = users <= 200 ? 1 : 2;
-    const redisMonthlyCost = redisInstances * redisHourlyCost * 730;
-
-    // Data Transfer
-    const dataTransferGB = 10 + (users / 10);
-    const dataTransferCost = Math.max(0, (dataTransferGB - 100) * 0.09);
-
-    const totalCost = ec2MonthlyCost + s3TotalCost + cognitoCost + snsCost + sqsCost + redisMonthlyCost + dataTransferCost;
-
-    return {
-      ec2: ec2MonthlyCost,
-      ec2Instances: ec2InstancesNeeded,
-      ec2Type: ec2InstanceType,
-      s3: s3TotalCost,
-      s3Storage: s3Storage,
-      cognito: cognitoCost,
-      sns: snsCost,
-      sqs: sqsCost,
-      redis: redisMonthlyCost,
-      redisType: redisInstanceType,
-      redisInstances: redisInstances,
-      dataTransfer: dataTransferCost,
-      total: totalCost
+  const calculateTeam = () => {
+    const efforts = {
+      backendDev: scope.backendServices * 0.75,
+      frontendDev: scope.frontendServices * 1.5,
+      aiAgentDev: scope.aiAgents * 2,
+      genAIDev: scope.generativeAI * 3,
+      separateServices: scope.separateServices * 1,
+      testing: 0
     };
+
+    efforts.testing = (efforts.backendDev + efforts.frontendDev + efforts.aiAgentDev + efforts.genAIDev + efforts.separateServices) * 0.2;
+    const totalEffort = Object.values(efforts).reduce((a, b) => a + b, 0);
+    const qualityMultiplier = { junior: 1.5, mid: 1.0, senior: 0.75 };
+    const adjustedEffort = totalEffort * qualityMultiplier[teamQuality];
+    const teamSize = Math.ceil(adjustedEffort / timeline);
+    
+    const team = {
+      backendDevs: Math.max(1, Math.ceil(teamSize * 0.25)),
+      frontendDevs: Math.max(1, Math.ceil(teamSize * 0.1)),
+      aiEngineers: Math.max(1, Math.ceil(teamSize * 0.3)),
+      devopsEngineers: Math.max(2, Math.min(3, Math.ceil(teamSize * 0.08))),
+      qaEngineers: Math.max(1, Math.ceil(teamSize * 0.15)),
+      techLeads: teamQuality === 'senior' ? 1 : 2,
+      projectManagers: 1,
+      total: 0
+    };
+    team.total = Object.values(team).reduce((a, b) => a + b, 0) - team.total;
+    return { team };
   };
 
-  const userScenarios = [10, 20, 30, 40, 50, 100, 150, 200, 300];
+  const calculateAWSCosts = () => {
+    const costs = {
+      ec2: awsServices.ec2 ? (userBase <= 100 ? 2 * 0.0832 * 730 : 2 * 0.1664 * 730) : 0,
+      rds: awsServices.rds ? (2 * (userBase <= 200 ? 0.136 : 0.24) * 730 + 200 * 0.115) : 0,
+      redis: awsServices.redis ? ((userBase <= 200 ? 1 : 2) * (userBase <= 100 ? 0.017 : 0.034) * 730) : 0,
+      s3: awsServices.s3 ? ((userBase <= 100 ? 50 : userBase <= 200 ? 100 : 200) * 0.023) : 0,
+      apiGateway: awsServices.apiGateway ? ((userBase * 1000 / 1000000) * 3.50) : 0,
+      vpc: awsServices.vpc ? (0.045 * 730 + (userBase / 10) * 0.045 + 0.01 * 730 * 3) : 0,
+      cognito: awsServices.cognito ? (userBase > 50000 ? (userBase - 50000) * 0.0055 : 0) : 0,
+      sns: awsServices.sns ? ((userBase * 100) > 1000000 ? (((userBase * 100) - 1000000) / 1000000) * 0.50 : 0) : 0,
+      sqs: awsServices.sqs ? ((userBase * 500) > 1000000 ? (((userBase * 500) - 1000000) / 1000000) * 0.40 : 0) : 0,
+      elb: awsServices.elb ? (0.0225 * 730) : 0,
+      cloudwatch: awsServices.cloudwatch ? 50 : 0
+    };
+    
+    costs.total = Object.values(costs).reduce((a, b) => a + b, 0);
+    return costs;
+  };
+
+  const calculateAzureCosts = () => {
+    const aciInstances = Math.max(3, Math.ceil(scope.aiAgents / 5));
+    const aciCost = aciInstances * 0.0000125 * 2 * 1024 * 730;
+    const openAICost = (scope.generativeAI * 10000000 / 1000) * 0.002;
+    const cognitiveServicesCost = scope.generativeAI * 100;
+    const aiSearchCost = 250;
+    const cosmosDBCost = 200;
+    const otherCost = 150 + 50 + 80 + (scope.aiAgents > 10 ? 100 : 50);
+    const azureTotal = aciCost + openAICost + cognitiveServicesCost + aiSearchCost + cosmosDBCost + otherCost;
+    return { aci: aciCost, openAI: openAICost, cognitiveServices: cognitiveServicesCost, aiSearch: aiSearchCost, cosmosDB: cosmosDBCost, total: azureTotal };
+  };
+
+  // Use useMemo to automatically recalculate when dependencies change
+  const results = useMemo(() => calculateTeam(), [scope, teamQuality, timeline]);
+  const awsCosts = useMemo(() => calculateAWSCosts(), [awsServices, userBase]);
+  const azureCosts = useMemo(() => calculateAzureCosts(), [scope]);
+
+  const salaryCosts = {
+    junior: { backendDev: 50000, frontendDev: 45000, aiEngineer: 70000, devops: 60000, qa: 40000, techLead: 120000, pm: 100000 },
+    mid: { backendDev: 80000, frontendDev: 75000, aiEngineer: 120000, devops: 90000, qa: 60000, techLead: 180000, pm: 150000 },
+    senior: { backendDev: 150000, frontendDev: 130000, aiEngineer: 200000, devops: 140000, qa: 90000, techLead: 250000, pm: 200000 }
+  };
+
+  // Use useMemo for all derived calculations so they update automatically
+  const costs = useMemo(() => salaryCosts[teamQuality], [teamQuality]);
+  
+  const monthlySalaryCost = useMemo(() => 
+    results.team.backendDevs * costs.backendDev + 
+    results.team.frontendDevs * costs.frontendDev + 
+    results.team.aiEngineers * costs.aiEngineer + 
+    results.team.devopsEngineers * costs.devops + 
+    results.team.qaEngineers * costs.qa + 
+    results.team.techLeads * costs.techLead + 
+    results.team.projectManagers * costs.pm,
+    [results.team, costs]
+  );
+  
+  const monthlyInfraCost = useMemo(() => awsCosts.total + azureCosts.total, [awsCosts.total, azureCosts.total]);
+  const totalMonthlyCost = useMemo(() => monthlySalaryCost + monthlyInfraCost, [monthlySalaryCost, monthlyInfraCost]);
+  const totalProjectCost = useMemo(() => totalMonthlyCost * timeline, [totalMonthlyCost, timeline]);
+  const maintenanceCost = useMemo(() => monthlySalaryCost * 0.3 + monthlyInfraCost, [monthlySalaryCost, monthlyInfraCost]);
+  const totalServices = useMemo(() => scope.backendServices + scope.frontendServices + scope.separateServices, [scope]);
+
+  const awsServicesList = [
+    { 
+      key: 'ec2', 
+      name: 'EC2 Instances', 
+      required: true, 
+      freeTier: '750 hrs/month for 12 months (t2.micro/t3.micro)',
+      freeNote: 'Free for first year with t2.micro/t3.micro instances only'
+    },
+    { 
+      key: 'rds', 
+      name: 'RDS Database', 
+      required: false, 
+      freeTier: '750 hrs/month for 12 months (db.t2.micro)',
+      freeNote: 'Free for ~100-500 users in first year with db.t2.micro'
+    },
+    { 
+      key: 'redis', 
+      name: 'ElastiCache Redis', 
+      required: false, 
+      freeTier: '750 hrs/month for 12 months (cache.t2.micro)',
+      freeNote: 'Free for ~500 users in first year with cache.t2.micro'
+    },
+    { 
+      key: 's3', 
+      name: 'S3 Storage', 
+      required: false, 
+      freeTier: '5 GB storage, 20K GET, 2K PUT/month',
+      freeNote: 'Free for ~50-100 users forever (5GB = ~50 users @ 100MB/user)'
+    },
+    { 
+      key: 'apiGateway', 
+      name: 'API Gateway', 
+      required: false, 
+      freeTier: '1M API calls/month for 12 months',
+      freeNote: 'Free for ~1,000 users in first year (1000 calls/user/month)'
+    },
+    { 
+      key: 'vpc', 
+      name: 'VPC (NAT + Endpoints)', 
+      required: false, 
+      freeTier: null,
+      freeNote: 'No free tier - costs apply for all users'
+    },
+    { 
+      key: 'cognito', 
+      name: 'Cognito Auth', 
+      required: false, 
+      freeTier: '50,000 MAU forever',
+      freeNote: 'FREE for up to 50,000 active users per month (FOREVER)'
+    },
+    { 
+      key: 'sns', 
+      name: 'SNS (Notifications)', 
+      required: false, 
+      freeTier: '1M publishes/month',
+      freeNote: 'Free for ~10,000 users (100 notifications/user/month)'
+    },
+    { 
+      key: 'sqs', 
+      name: 'SQS (Queue)', 
+      required: false, 
+      freeTier: '1M requests/month',
+      freeNote: 'Free for ~2,000 users (500 requests/user/month)'
+    },
+    { 
+      key: 'elb', 
+      name: 'Load Balancer', 
+      required: false, 
+      freeTier: '750 hrs/month for 12 months (15GB traffic)',
+      freeNote: 'Free for first year with minimal traffic'
+    },
+    { 
+      key: 'cloudwatch', 
+      name: 'CloudWatch', 
+      required: false, 
+      freeTier: '10 metrics, 1M API requests',
+      freeNote: 'Basic monitoring free, advanced costs ~$50/mo'
+    }
+  ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-4">
       <div className="max-w-7xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-4">
-              <DollarSign className="w-12 h-12 text-indigo-600" />
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-2">
+            <Users className="w-8 h-8 text-purple-600" />
+            AWS + Azure Team Calculator
+          </h1>
+          <p className="text-gray-600 text-sm">Configure your project scope and get instant team size, costs, and cloud estimates</p>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6 mb-6">
+          <div className="bg-white rounded-xl shadow-lg p-5">
+            <h2 className="text-lg font-bold mb-4">🎯 Project Scope</h2>
+            <div className="space-y-4">
               <div>
-                <h1 className="text-4xl font-bold text-gray-900">AWS Cost Estimator</h1>
-                <p className="text-gray-600 mt-1">20 Node.js Services (10 Backend + 10 Frontend)</p>
+                <label className="block text-sm font-semibold mb-2">
+                  <Server className="w-4 h-4 inline mr-1" />
+                  Backend Services: {scope.backendServices}
+                </label>
+                <input type="range" min="0" max="100" value={scope.backendServices} onChange={(e) => updateScope('backendServices', e.target.value)} className="w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  <Code className="w-4 h-4 inline mr-1" />
+                  Frontend Services: {scope.frontendServices}
+                </label>
+                <input type="range" min="0" max="20" value={scope.frontendServices} onChange={(e) => updateScope('frontendServices', e.target.value)} className="w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  <Brain className="w-4 h-4 inline mr-1" />
+                  AI Agents: {scope.aiAgents}
+                </label>
+                <input type="range" min="0" max="50" value={scope.aiAgents} onChange={(e) => updateScope('aiAgents', e.target.value)} className="w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  <Brain className="w-4 h-4 inline mr-1" />
+                  Generative AI: {scope.generativeAI}
+                </label>
+                <input type="range" min="0" max="10" value={scope.generativeAI} onChange={(e) => updateScope('generativeAI', e.target.value)} className="w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  <Server className="w-4 h-4 inline mr-1" />
+                  Separate Services: {scope.separateServices}
+                </label>
+                <input type="range" min="0" max="20" value={scope.separateServices} onChange={(e) => updateScope('separateServices', e.target.value)} className="w-full" />
               </div>
             </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-lg p-5">
+            <h2 className="text-lg font-bold mb-4">⚙️ Configuration</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  <Clock className="w-4 h-4 inline mr-1" />
+                  Timeline: {timeline} months
+                </label>
+                <input type="range" min="3" max="24" value={timeline} onChange={(e) => setTimeline(parseInt(e.target.value))} className="w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2">Team Quality</label>
+                <select value={teamQuality} onChange={(e) => setTeamQuality(e.target.value)} className="w-full p-2 border rounded">
+                  <option value="junior">Junior (₹40-70K)</option>
+                  <option value="mid">Mid-level (₹60-120K)</option>
+                  <option value="senior">Senior (₹90-200K)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  <Users className="w-4 h-4 inline mr-1" />
+                  Expected Users: {userBase}
+                </label>
+                <input type="range" min="50" max="5000" step="50" value={userBase} onChange={(e) => setUserBase(parseInt(e.target.value))} className="w-full" />
+                <p className="text-xs text-gray-500 mt-1">Affects AWS service sizing and costs</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6 mb-6">
+          <div className="bg-white rounded-xl shadow-lg p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Cloud className="w-6 h-6 text-orange-600" />
+              <h2 className="text-lg font-bold">AWS Services</h2>
+            </div>
+            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
+              {awsServicesList.map((service) => {
+                const cost = awsCosts[service.key] || 0;
+                const isFree = service.freeTier && (
+                  (service.key === 'ec2' && userBase <= 100) ||
+                  (service.key === 'rds' && userBase <= 500) ||
+                  (service.key === 'redis' && userBase <= 500) ||
+                  (service.key === 's3' && userBase <= 100) ||
+                  (service.key === 'apiGateway' && userBase <= 1000) ||
+                  (service.key === 'cognito' && userBase <= 50000) ||
+                  (service.key === 'sns' && userBase <= 10000) ||
+                  (service.key === 'sqs' && userBase <= 2000) ||
+                  (service.key === 'elb' && userBase <= 100) ||
+                  (service.key === 'cloudwatch')
+                );
+                
+                const status = !awsServices[service.key] ? { icon: '⚫', color: 'text-gray-400', label: 'Disabled' } :
+                              isFree ? { icon: '🟢', color: 'text-green-600', label: 'FREE' } :
+                              cost < 50 ? { icon: '🟡', color: 'text-yellow-600', label: 'Low' } :
+                              { icon: '🔴', color: 'text-red-600', label: 'Paid' };
+
+                return (
+                  <div key={service.key} className={`border rounded-lg p-2 transition-all ${awsServices[service.key] ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-200'}`}>
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <div className="flex items-start gap-2 flex-1">
+                        <input type="checkbox" checked={awsServices[service.key]} onChange={() => toggleAwsService(service.key)} disabled={service.required} className="mt-1" />
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium text-sm block">{service.name}</span>
+                          {service.freeTier && (
+                            <div className="text-xs text-gray-600 mt-0.5">
+                              <div className="flex items-center gap-1">
+                                {status.icon}
+                                <span className={`font-semibold ${status.color}`}>{status.label}</span>
+                              </div>
+                              {isFree && service.freeNote && (
+                                <div className="text-green-700 mt-1 text-xs">
+                                  ✓ {service.freeNote}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {awsServices[service.key] && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              💡 Free Tier: {service.freeTier || 'Not available'}
+                            </div>
+                          )}
+                          {awsServices[service.key] && !isFree && service.freeNote && (
+                            <div className="text-xs text-orange-700 mt-1 bg-orange-100 rounded px-2 py-1">
+                              📊 {service.freeNote.replace('Free for', 'Would be free for')}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <span className={`text-sm font-bold ml-2 ${status.color}`}>
+                        {awsServices[service.key] ? `₹${(awsCosts[service.key] * 83.5).toFixed(0)}` : '₹0'}
+                      </span>
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="pt-3 border-t-2 border-orange-200">
+              <div className="flex justify-between items-center">
+                <span className="font-bold text-gray-900">AWS Total</span>
+                <span className="text-xl font-bold text-orange-600">₹{(awsCosts.total * 83.5 / 1000).toFixed(1)}K/mo</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-lg p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Brain className="w-6 h-6 text-blue-600" />
+              <h2 className="text-lg font-bold">Azure Costs</h2>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between p-2 bg-blue-50 rounded text-sm">
+                <span>Containers</span>
+                <span className="font-bold">₹{(azureCosts.aci * 83.5).toFixed(0)}</span>
+              </div>
+              <div className="flex justify-between p-2 bg-blue-50 rounded text-sm">
+                <span>OpenAI</span>
+                <span className="font-bold">₹{(azureCosts.openAI * 83.5).toFixed(0)}</span>
+              </div>
+              <div className="flex justify-between p-2 bg-blue-50 rounded text-sm">
+                <span>AI Services</span>
+                <span className="font-bold">₹{((azureCosts.cognitiveServices + azureCosts.aiSearch) * 83.5).toFixed(0)}</span>
+              </div>
+              <div className="flex justify-between p-2 bg-blue-100 rounded font-bold text-sm">
+                <span>Total</span>
+                <span>₹{(azureCosts.total * 83.5 / 1000).toFixed(1)}K/mo</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-lg p-5 mb-6">
+          <h2 className="text-lg font-bold mb-4">👥 Team ({results.team.total} people)</h2>
+          <div className="grid md:grid-cols-4 gap-3">
+            <div className="bg-blue-50 border border-blue-200 rounded p-3">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-sm font-semibold">Backend</span>
+                <span className="text-2xl font-bold text-blue-600">{results.team.backendDevs}</span>
+              </div>
+              <p className="text-xs text-gray-600">{scope.backendServices} services</p>
+              <p className="text-xs text-blue-700 mt-1">₹{(results.team.backendDevs * costs.backendDev / 100000).toFixed(1)}L</p>
+            </div>
+            <div className="bg-green-50 border border-green-200 rounded p-3">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-sm font-semibold">Frontend</span>
+                <span className="text-2xl font-bold text-green-600">{results.team.frontendDevs}</span>
+              </div>
+              <p className="text-xs text-gray-600">{scope.frontendServices} services</p>
+              <p className="text-xs text-green-700 mt-1">₹{(results.team.frontendDevs * costs.frontendDev / 100000).toFixed(1)}L</p>
+            </div>
+            <div className="bg-purple-50 border border-purple-200 rounded p-3">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-sm font-semibold">AI/ML</span>
+                <span className="text-2xl font-bold text-purple-600">{results.team.aiEngineers}</span>
+              </div>
+              <p className="text-xs text-gray-600">{scope.aiAgents + scope.generativeAI} AI systems</p>
+              <p className="text-xs text-purple-700 mt-1">₹{(results.team.aiEngineers * costs.aiEngineer / 100000).toFixed(1)}L</p>
+            </div>
+            <div className="bg-orange-50 border border-orange-200 rounded p-3">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-sm font-semibold">DevOps</span>
+                <span className="text-2xl font-bold text-orange-600">{results.team.devopsEngineers}</span>
+              </div>
+              <p className="text-xs text-gray-600">AWS + Azure</p>
+              <p className="text-xs text-orange-700 mt-1">₹{(results.team.devopsEngineers * costs.devops / 100000).toFixed(1)}L</p>
+            </div>
+            <div className="bg-pink-50 border border-pink-200 rounded p-3">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-sm font-semibold">QA</span>
+                <span className="text-2xl font-bold text-pink-600">{results.team.qaEngineers}</span>
+              </div>
+              <p className="text-xs text-gray-600">Testing</p>
+              <p className="text-xs text-pink-700 mt-1">₹{(results.team.qaEngineers * costs.qa / 100000).toFixed(1)}L</p>
+            </div>
+            <div className="bg-indigo-50 border border-indigo-200 rounded p-3">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-sm font-semibold">Leads</span>
+                <span className="text-2xl font-bold text-indigo-600">{results.team.techLeads}</span>
+              </div>
+              <p className="text-xs text-gray-600">Tech Lead</p>
+              <p className="text-xs text-indigo-700 mt-1">₹{(results.team.techLeads * costs.techLead / 100000).toFixed(1)}L</p>
+            </div>
+            <div className="bg-teal-50 border border-teal-200 rounded p-3">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-sm font-semibold">PM</span>
+                <span className="text-2xl font-bold text-teal-600">{results.team.projectManagers}</span>
+              </div>
+              <p className="text-xs text-gray-600">Manager</p>
+              <p className="text-xs text-teal-700 mt-1">₹{(results.team.projectManagers * costs.pm / 100000).toFixed(1)}L</p>
+            </div>
+            <div className="bg-purple-600 text-white rounded p-3">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-sm font-semibold">TOTAL</span>
+                <span className="text-2xl font-bold">{results.team.total}</span>
+              </div>
+              <p className="text-xs">All roles</p>
+              <p className="text-xs mt-1">₹{(monthlySalaryCost / 100000).toFixed(1)}L</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl shadow-lg p-5 text-white mb-6">
+          <h2 className="text-xl font-bold mb-4">💰 Summary</h2>
+          <div className="grid md:grid-cols-4 gap-4">
+            <div>
+              <p className="text-xs text-purple-200">Salaries</p>
+              <p className="text-2xl font-bold">₹{(monthlySalaryCost / 100000).toFixed(1)}L</p>
+            </div>
+            <div>
+              <p className="text-xs text-purple-200">Infrastructure</p>
+              <p className="text-2xl font-bold">₹{(monthlyInfraCost * 83.5 / 1000).toFixed(0)}K</p>
+            </div>
+            <div>
+              <p className="text-xs text-purple-200">Project ({timeline}mo)</p>
+              <p className="text-2xl font-bold">₹{(totalProjectCost / 10000000).toFixed(2)}Cr</p>
+            </div>
+            <div>
+              <p className="text-xs text-purple-200">Maintenance</p>
+              <p className="text-2xl font-bold">₹{(maintenanceCost / 100000).toFixed(1)}L/mo</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded">
             <div className="flex gap-2">
-              <button
-                onClick={() => setCurrency('USD')}
-                className={`px-6 py-3 rounded-lg font-semibold transition-all ${
-                  currency === 'USD'
-                    ? 'bg-indigo-600 text-white shadow-lg'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                USD ($)
-              </button>
-              <button
-                onClick={() => setCurrency('INR')}
-                className={`px-6 py-3 rounded-lg font-semibold transition-all ${
-                  currency === 'INR'
-                    ? 'bg-indigo-600 text-white shadow-lg'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                INR (₹)
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-6 mb-8 border-2 border-purple-200">
-            <div className="flex items-center gap-3 mb-4">
-              <Package className="w-8 h-8 text-purple-600" />
-              <h2 className="text-xl font-semibold text-purple-900">Deployment Architecture:</h2>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <button
-                onClick={() => setDeploymentType('monorepo')}
-                className={`p-4 rounded-lg border-2 transition-all text-left ${
-                  deploymentType === 'monorepo'
-                    ? 'border-purple-600 bg-purple-100 shadow-lg'
-                    : 'border-gray-300 bg-white hover:border-purple-400'
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <Package className="w-6 h-6 text-purple-600" />
-                  <h3 className="font-bold text-lg text-gray-900">Monorepo Architecture</h3>
-                  {deploymentType === 'monorepo' && (
-                    <span className="ml-auto bg-purple-600 text-white text-xs px-2 py-1 rounded-full">Selected</span>
-                  )}
-                </div>
-                <p className="text-sm text-gray-700">All services bundled together. Fewer, larger EC2 instances. <strong>More cost-efficient</strong> for smaller teams.</p>
-                <p className="text-xs text-purple-700 mt-2">💰 Typically 30-50% cheaper than microservices</p>
-              </button>
-
-              <button
-                onClick={() => setDeploymentType('microservices')}
-                className={`p-4 rounded-lg border-2 transition-all text-left ${
-                  deploymentType === 'microservices'
-                    ? 'border-indigo-600 bg-indigo-100 shadow-lg'
-                    : 'border-gray-300 bg-white hover:border-indigo-400'
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <Server className="w-6 h-6 text-indigo-600" />
-                  <h3 className="font-bold text-lg text-gray-900">Microservices Architecture</h3>
-                  {deploymentType === 'microservices' && (
-                    <span className="ml-auto bg-indigo-600 text-white text-xs px-2 py-1 rounded-full">Selected</span>
-                  )}
-                </div>
-                <p className="text-sm text-gray-700">Services run independently. More EC2 instances needed. Better scalability and isolation.</p>
-                <p className="text-xs text-indigo-700 mt-2">🚀 Better for large-scale production environments</p>
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-indigo-50 rounded-xl p-6 mb-8">
-            <h2 className="text-xl font-semibold text-indigo-900 mb-4">Your Configuration:</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="flex items-center gap-3 bg-white p-3 rounded-lg">
-                <Server className="w-6 h-6 text-indigo-600" />
-                <div>
-                  <p className="text-sm text-gray-600">Backend Services</p>
-                  <p className="font-semibold text-gray-900">10 Services</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 bg-white p-3 rounded-lg">
-                <Server className="w-6 h-6 text-green-600" />
-                <div>
-                  <p className="text-sm text-gray-600">Frontend Services</p>
-                  <p className="font-semibold text-gray-900">10 Services</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 bg-white p-3 rounded-lg">
-                <Database className="w-6 h-6 text-purple-600" />
-                <div>
-                  <p className="text-sm text-gray-600">AWS Services</p>
-                  <p className="font-semibold text-gray-900">EC2, S3, Cognito, SNS, SQS, Redis</p>
-                </div>
+              <CheckCircle2 className="w-5 h-5 text-green-600" />
+              <div>
+                <h3 className="font-bold text-sm text-green-900 mb-1">Multi-Cloud</h3>
+                <p className="text-xs text-green-800">AWS: {totalServices} services • Azure: {scope.aiAgents + scope.generativeAI} AI</p>
               </div>
             </div>
           </div>
-
-          <div className="mb-8">
-            <label className="block text-sm font-medium text-gray-700 mb-3">
-              Select User Count: <span className="text-2xl font-bold text-indigo-600">{userCount}</span>
-            </label>
-            <input
-              type="range"
-              min="10"
-              max="300"
-              step="10"
-              value={userCount}
-              onChange={(e) => setUserCount(parseInt(e.target.value))}
-              className="w-full h-3 bg-indigo-200 rounded-lg appearance-none cursor-pointer"
-            />
-            <div className="flex justify-between text-sm text-gray-600 mt-2">
-              <span>10</span>
-              <span>50</span>
-              <span>100</span>
-              <span>150</span>
-              <span>200</span>
-              <span>250</span>
-              <span>300</span>
+          <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded">
+            <div className="flex gap-2">
+              <AlertCircle className="w-5 h-5 text-yellow-600" />
+              <div>
+                <h3 className="font-bold text-sm text-yellow-900 mb-1">Note</h3>
+                <p className="text-xs text-yellow-800">Select/deselect AWS services to customize your infrastructure</p>
+              </div>
             </div>
           </div>
-
-          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl p-6 mb-8">
-            <h3 className="text-2xl font-bold mb-2">Current Estimate ({deploymentType === 'monorepo' ? 'Monorepo' : 'Microservices'})</h3>
-            <p className="text-5xl font-bold">{formatCurrency(calculateCosts(userCount).total)}</p>
-            <p className="text-indigo-200 mt-2">per month ({userCount} users)</p>
-            {currency === 'INR' && (
-              <p className="text-sm text-indigo-100 mt-2">≈ ${calculateCosts(userCount).total.toFixed(2)} USD</p>
-            )}
-            <div className="mt-4 bg-white/20 rounded-lg p-3">
-              <p className="text-sm">
-                <strong>{calculateCosts(userCount).ec2Instances} × {calculateCosts(userCount).ec2Type}</strong> EC2 instances
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
-          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6">
-            <h2 className="text-3xl font-bold text-white">Detailed Cost Breakdown by User Count</h2>
-            <p className="text-indigo-100 mt-1">Architecture: {deploymentType === 'monorepo' ? 'Monorepo (Bundled Services)' : 'Microservices (Separate Services)'}</p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Service
-                  </th>
-                  {userScenarios.map(users => (
-                    <th key={users} className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      {users} Users
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                <tr className="hover:bg-indigo-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <Server className="w-5 h-5 text-orange-500" />
-                      <div>
-                        <p className="font-semibold text-gray-900">EC2 Instances</p>
-                        <p className="text-sm text-gray-500">{deploymentType === 'monorepo' ? 'Bundled' : 'Distributed'}</p>
-                      </div>
-                    </div>
-                  </td>
-                  {userScenarios.map(users => {
-                    const costs = calculateCosts(users);
-                    return (
-                      <td key={users} className="px-6 py-4 text-center">
-                        <p className="font-bold text-gray-900">{formatCurrency(costs.ec2)}</p>
-                        <p className="text-xs text-gray-500">{costs.ec2Instances}× {costs.ec2Type}</p>
-                      </td>
-                    );
-                  })}
-                </tr>
-
-                <tr className="hover:bg-indigo-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <Database className="w-5 h-5 text-green-500" />
-                      <div>
-                        <p className="font-semibold text-gray-900">S3 Storage</p>
-                        <p className="text-sm text-gray-500">Storage + Requests</p>
-                      </div>
-                    </div>
-                  </td>
-                  {userScenarios.map(users => {
-                    const costs = calculateCosts(users);
-                    return (
-                      <td key={users} className="px-6 py-4 text-center">
-                        <p className="font-bold text-gray-900">{formatCurrency(costs.s3)}</p>
-                        <p className="text-xs text-gray-500">{costs.s3Storage} GB</p>
-                      </td>
-                    );
-                  })}
-                </tr>
-
-                <tr className="hover:bg-indigo-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <Users className="w-5 h-5 text-blue-500" />
-                      <div>
-                        <p className="font-semibold text-gray-900">Cognito</p>
-                        <p className="text-sm text-gray-500">Authentication</p>
-                      </div>
-                    </div>
-                  </td>
-                  {userScenarios.map(users => {
-                    const costs = calculateCosts(users);
-                    return (
-                      <td key={users} className="px-6 py-4 text-center">
-                        <p className="font-bold text-gray-900">{formatCurrency(costs.cognito)}</p>
-                        <p className="text-xs text-green-600">Free tier</p>
-                      </td>
-                    );
-                  })}
-                </tr>
-
-                <tr className="hover:bg-indigo-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <Bell className="w-5 h-5 text-yellow-500" />
-                      <div>
-                        <p className="font-semibold text-gray-900">SNS</p>
-                        <p className="text-sm text-gray-500">Notifications</p>
-                      </div>
-                    </div>
-                  </td>
-                  {userScenarios.map(users => {
-                    const costs = calculateCosts(users);
-                    return (
-                      <td key={users} className="px-6 py-4 text-center">
-                        <p className="font-bold text-gray-900">{formatCurrency(costs.sns)}</p>
-                        <p className="text-xs text-gray-500">{(users * 100 / 1000).toFixed(0)}k msgs</p>
-                      </td>
-                    );
-                  })}
-                </tr>
-
-                <tr className="hover:bg-indigo-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <Mail className="w-5 h-5 text-purple-500" />
-                      <div>
-                        <p className="font-semibold text-gray-900">SQS</p>
-                        <p className="text-sm text-gray-500">Message Queue</p>
-                      </div>
-                    </div>
-                  </td>
-                  {userScenarios.map(users => {
-                    const costs = calculateCosts(users);
-                    return (
-                      <td key={users} className="px-6 py-4 text-center">
-                        <p className="font-bold text-gray-900">{formatCurrency(costs.sqs)}</p>
-                        <p className="text-xs text-gray-500">{(users * 500 / 1000).toFixed(0)}k msgs</p>
-                      </td>
-                    );
-                  })}
-                </tr>
-
-                <tr className="hover:bg-indigo-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <Database className="w-5 h-5 text-red-500" />
-                      <div>
-                        <p className="font-semibold text-gray-900">Redis (ElastiCache)</p>
-                        <p className="text-sm text-gray-500">Caching</p>
-                      </div>
-                    </div>
-                  </td>
-                  {userScenarios.map(users => {
-                    const costs = calculateCosts(users);
-                    return (
-                      <td key={users} className="px-6 py-4 text-center">
-                        <p className="font-bold text-gray-900">{formatCurrency(costs.redis)}</p>
-                        <p className="text-xs text-gray-500">{costs.redisType}</p>
-                      </td>
-                    );
-                  })}
-                </tr>
-
-                <tr className="hover:bg-indigo-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <Server className="w-5 h-5 text-indigo-500" />
-                      <div>
-                        <p className="font-semibold text-gray-900">Data Transfer</p>
-                        <p className="text-sm text-gray-500">Outbound</p>
-                      </div>
-                    </div>
-                  </td>
-                  {userScenarios.map(users => {
-                    const costs = calculateCosts(users);
-                    return (
-                      <td key={users} className="px-6 py-4 text-center">
-                        <p className="font-bold text-gray-900">{formatCurrency(costs.dataTransfer)}</p>
-                        <p className="text-xs text-gray-500">~{(10 + users/10).toFixed(0)} GB</p>
-                      </td>
-                    );
-                  })}
-                </tr>
-
-                <tr className="bg-gradient-to-r from-indigo-100 to-purple-100 font-bold">
-                  <td className="px-6 py-5 text-lg text-gray-900">
-                    TOTAL MONTHLY COST
-                  </td>
-                  {userScenarios.map(users => {
-                    const costs = calculateCosts(users);
-                    return (
-                      <td key={users} className="px-6 py-5 text-center">
-                        <p className="text-2xl font-bold text-indigo-700">{formatCurrency(costs.total)}</p>
-                      </td>
-                    );
-                  })}
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="mt-8 bg-yellow-50 border-l-4 border-yellow-400 p-6 rounded-lg">
-          <h3 className="text-lg font-semibold text-yellow-900 mb-3">💡 Important Notes:</h3>
-          <ul className="space-y-2 text-yellow-800">
-            <li>• <strong>Architecture:</strong> Monorepo uses fewer, larger instances (30-50% cheaper). Microservices uses more, smaller instances (better isolation).</li>
-            <li>• <strong>Currency:</strong> Exchange rate: 1 USD = ₹{USD_TO_INR} (Toggle button to switch)</li>
-            <li>• <strong>Region:</strong> Prices based on US-East-1 (N. Virginia). Other regions may vary.</li>
-            <li>• <strong>Free Tiers:</strong> Cognito first 50k MAU, SNS/SQS first 1M requests are FREE.</li>
-            <li>• <strong>Optimization:</strong> Use Reserved Instances for 40-70% savings on EC2 costs.</li>
-            <li>• <strong>Actual Usage:</strong> Costs vary based on actual traffic patterns and data usage.</li>
-            <li>• <strong>Additional Costs:</strong> Load balancers, CloudWatch, backups may add extra charges.</li>
-          </ul>
         </div>
       </div>
     </div>
   );
 };
 
-export default AWSCostCalculator;
+export default App;
